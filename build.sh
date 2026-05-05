@@ -1,0 +1,1 @@
+g++ main.cpp lexer.cpp -o p32cc
