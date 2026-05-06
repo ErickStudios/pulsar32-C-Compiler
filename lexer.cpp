@@ -1,4 +1,5 @@
 #include "lexer.h"
+#include "ast.h"
 #include <cctype>
 
 std::vector<Token> tokenize(const std::string& code) {
