@@ -4,7 +4,7 @@
 #include <functional>
 #include <fstream>
 #include <sstream>
-
+#include <map>
 void displayy(BodyCode& program) {
     for (auto stmt : program.body) {
         if (auto var = dynamic_cast<VarDecl*>(stmt)) {
@@ -34,26 +34,78 @@ std::string parseToSize(VariablesSize size) {
     if (size == VariablesSize::Int) return "Dword";
     return "Dword";
 }
-std::string generateCode(BodyCode& program) {
+std::string generateCode(
+    BodyCode& program,
+    std::map<std::string, VariablesSize>& variables
+) {
     std::string out;
 
     for (auto stmt : program.body) {
+
         if (auto var = dynamic_cast<VarDecl*>(stmt)) {
+
+            variables[var->name] = var->size;
+
             out += var->name + ":\n";
             out += "Assume-" + parseToSize(var->size) + " 0\n";
         }
+
         else if (auto fn = dynamic_cast<FunctionDecl*>(stmt)) {
+
             out += fn->nam + ":\n";
 
             if (fn->code) {
-                out += generateCode(*fn->code);
+                out += generateCode(*fn->code, variables);
             }
 
             out += "HLT\n";
         }
+
         else if (auto asg = dynamic_cast<Assignment*>(stmt)) {
-            out += "Push-Dword " + std::to_string(asg->value) + "\n";
-            out += "Pop-Dword " + asg->name + "\n";
+
+            VariablesSize size = variables[asg->name];
+
+            out += "Lea-Dword " + asg->name + "\n";
+
+            out += "Out-" +
+                   parseToSize(size) +
+                   " " +
+                   std::to_string(asg->value) +
+                   "\n";
+        }
+
+        else if (auto bin = dynamic_cast<BinaryOperation*>(stmt)) {
+
+            VariablesSize size = variables[bin->dest];
+
+            std::string opName;
+
+            out += "Lea-Dword " + bin->right + "\n";
+            out += "Mov-" + parseToSize(size) + "\n";
+            out += "Push-" + parseToSize(size) +  " Out\n";
+
+            out += "Lea-Dword " + bin->left + "\n";
+            out += "Mov-" + parseToSize(size) + "\n";
+            out += "Push-" + parseToSize(size) + " Out\n";
+
+            if (bin->op == "+") opName = "Add";
+            else if (bin->op == "-") opName = "Sub";
+            else if (bin->op == "*") opName = "Mul";
+            else if (bin->op == "/") opName = "Div";
+            else if (bin->op == "&") opName = "And";
+            else if (bin->op == "|") opName = "Or";
+            else if (bin->op == "^") opName = "Xor";
+
+            out += opName +
+                "-" +
+                parseToSize(size) +
+                "-Sp-Sp\n";
+
+            out += "Lea-Dword " + bin->dest + "\n";
+
+            out += "Out-" +
+                parseToSize(size) +
+                " Out\n";
         }
     }
 
@@ -154,12 +206,48 @@ BodyCode parseCode(const std::string& code) {
 
         return nullptr;
     };
+    auto parseBinaryOperation = [&]() -> StatmentNode* {
 
+        if (peek().type == TOK_IDENTIFIER) {
+
+            std::string dest = consume().value;
+
+            if (peek().value == ":") {
+
+                consume();
+                expect("=");
+
+                std::string left = consume().value;
+
+                std::string op = consume().value;
+
+                std::string right = consume().value;
+
+                expect(";");
+
+                auto bin = new BinaryOperation();
+
+                bin->dest = dest;
+                bin->left = left;
+                bin->right = right;
+                bin->op = op;
+
+                return bin;
+            }
+
+            i--;
+        }
+
+        return nullptr;
+    };
     parseStatement = [&]() -> StatmentNode* {
         auto stmt = parseVarDecl();
         if (stmt) return stmt;
 
         stmt = parseAssignment(); 
+        if (stmt) return stmt;
+
+        stmt = parseBinaryOperation();
         if (stmt) return stmt;
 
         if (peek().type == TOK_EOF) return nullptr;
@@ -211,6 +299,7 @@ int main(int argc, char* argv[]) {
 
     std::string code = buffer.str();
 
+    std::map<std::string, VariablesSize> vars;
     BodyCode program = parseCode(code);
-    std::cout << generateCode(program) << std::endl;
+    std::cout << generateCode(program,vars) << std::endl;
 }

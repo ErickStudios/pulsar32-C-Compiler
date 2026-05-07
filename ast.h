@@ -41,6 +41,16 @@ struct Assignment : StatmentNode {
     }
 };
 
+struct BinaryOperation : StatmentNode  {
+    std::string dest;
+    std::string left;
+    std::string right;
+    std::string op;
+    std::string getType() const override {
+        return "BinaryOperation";
+    }
+};
+
 struct FunctionDecl : StatmentNode {
     std::string nam;
     BodyCode* code;
