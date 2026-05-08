@@ -32,12 +32,28 @@ struct VarDecl : StatmentNode {
     }
 };
 
+struct VarDeclWithInit : StatmentNode {
+    std::string name;
+    VariablesSize size;
+    std::string init_val;
+    std::string getType() const override {
+        return "VarDeclWithInit";
+    }
+};
+
 struct Assignment : StatmentNode {
     std::string name;
     int value;
 
     std::string getType() const override {
         return "Assignment";
+    }
+};
+
+struct JmpSafeAsm : StatmentNode {
+    std::string dest;
+    std::string getType() const override {
+        return "JmpSafeAsm";
     }
 };
 

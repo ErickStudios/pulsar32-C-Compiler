@@ -5,6 +5,10 @@
 #include <fstream>
 #include <sstream>
 #include <map>
+struct Lex {
+    VariablesSize size;
+    std::string initializeWith;
+};
 void displayy(BodyCode& program) {
     for (auto stmt : program.body) {
         if (auto var = dynamic_cast<VarDecl*>(stmt)) {
@@ -48,6 +52,14 @@ std::string generateCode(
 
             out += var->name + ":\n";
             out += "Assume-" + parseToSize(var->size) + " 0\n";
+        }
+
+        else if (auto vari = dynamic_cast<VarDeclWithInit*>(stmt)) {
+
+            variables[vari->name] = vari->size;
+
+            out += vari->name + ":\n";
+            out += "Assume-" + parseToSize(vari->size) + " " + vari->init_val + "\n";
         }
 
         else if (auto fn = dynamic_cast<FunctionDecl*>(stmt)) {
@@ -107,11 +119,19 @@ std::string generateCode(
                 parseToSize(size) +
                 " Out\n";
         }
+    
+        else if (auto jmp_t = dynamic_cast<JmpSafeAsm*>(stmt)) {
+
+            out += "Jmp-Dword-Clasic " + jmp_t->dest + "\n";
+
+        }
     }
 
     return out;
 }
 BodyCode parseCode(const std::string& code) {
+    std::map<std::string, Lex> types;
+
     auto tokens = tokenize(code);
     int i = 0;
 
@@ -206,6 +226,20 @@ BodyCode parseCode(const std::string& code) {
 
         return nullptr;
     };
+    auto parseVarInitDecl = [&]() -> StatmentNode* {
+        if (types.find(peek().value) != types.end()) {
+            auto typo = consume().value;
+            expect("&");
+            auto decl = consume();
+            expect(";");
+            auto vrl = new VarDeclWithInit();
+            vrl->name = decl.value;
+            vrl->size = types[typo].size;
+            vrl->init_val = types[typo].initializeWith;
+            return vrl;
+        }
+        return nullptr;
+    };
     auto parseBinaryOperation = [&]() -> StatmentNode* {
 
         if (peek().type == TOK_IDENTIFIER) {
@@ -240,22 +274,64 @@ BodyCode parseCode(const std::string& code) {
 
         return nullptr;
     };
+    auto parseJmp = [&]() -> StatmentNode* {
+        if (peek().value == "jmp_t") {
+            consume();
+            expect("(");
+            auto dest = consume().value;
+            expect(")");
+            expect(";");
+            auto jmp_t = new JmpSafeAsm();
+            jmp_t->dest = dest;
+            return jmp_t;
+        }
+
+        return nullptr;
+    };
+    auto parseExternalTypedef = [&]() -> int {
+        if (peek().value == "extern") {
+            consume();
+            auto ty = parseType();
+            if (peek().value == "*") {
+                consume();
+                auto nameFunc = consume().value;
+                expect("(");
+                expect(")");
+                expect(";");
+                Lex myLex;
+                myLex.size = ty;
+                myLex.initializeWith = nameFunc;
+                types[nameFunc + "_t"] = myLex;
+                return 1;
+            }
+        }
+
+        return 0;
+    };
     parseStatement = [&]() -> StatmentNode* {
-        auto stmt = parseVarDecl();
+        auto stmt = parseJmp();
+        if (stmt) return stmt;
+        
+        stmt = parseVarInitDecl();
         if (stmt) return stmt;
 
+        stmt = parseVarDecl();
+        if (stmt) return stmt;
+        
         stmt = parseAssignment(); 
         if (stmt) return stmt;
 
         stmt = parseBinaryOperation();
         if (stmt) return stmt;
 
+        auto stmt2 = parseExternalTypedef();
+        if (stmt2 == 1) return nullptr;
+
         if (peek().type == TOK_EOF) return nullptr;
 
         consume();
         return nullptr;
     };
-
     auto parseUnknown = [&]() {
         auto typePa = parseType();
         // es un tipo
@@ -279,7 +355,6 @@ BodyCode parseCode(const std::string& code) {
 
     return program;
 }
-
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cerr << argv[0] << " <*.c>\n";
