@@ -57,6 +57,20 @@ struct JmpSafeAsm : StatmentNode {
     }
 };
 
+struct CallSafeAsm : StatmentNode {
+    std::string dest;
+    std::string getType() const override {
+        return "CallSafeAsm";
+    }
+};
+
+struct RetSafeAsm : StatmentNode {
+    std::string getType() const override {
+        return "RetSafeAsm";
+    }
+};
+
+
 struct BinaryOperation : StatmentNode  {
     std::string dest;
     std::string left;

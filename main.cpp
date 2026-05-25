@@ -50,7 +50,7 @@ std::string generateCode(
 
             variables[var->name] = var->size;
 
-            out += var->name + ":\n";
+            out += var->name + ": ";
             out += "Assume-" + parseToSize(var->size) + " 0\n";
         }
 
@@ -58,7 +58,7 @@ std::string generateCode(
 
             variables[vari->name] = vari->size;
 
-            out += vari->name + ":\n";
+            out += vari->name + ": ";
             out += "Assume-" + parseToSize(vari->size) + " " + vari->init_val + "\n";
         }
 
@@ -70,7 +70,6 @@ std::string generateCode(
                 out += generateCode(*fn->code, variables);
             }
 
-            out += "HLT\n";
         }
 
         else if (auto asg = dynamic_cast<Assignment*>(stmt)) {
@@ -124,6 +123,16 @@ std::string generateCode(
 
             out += "Jmp-Dword-Clasic " + jmp_t->dest + "\n";
 
+        }
+
+        else if (auto call_t = dynamic_cast<CallSafeAsm*>(stmt)) {
+
+            out += "Jmp-Dword-Call " + call_t->dest + "\n";
+
+        }
+
+        else if (auto ret_t = dynamic_cast<RetSafeAsm*>(stmt)) {
+            out += "Jmp-Dword-Clasic Sp\n";
         }
     }
 
@@ -288,6 +297,20 @@ BodyCode parseCode(const std::string& code) {
 
         return nullptr;
     };
+    auto parseCall = [&]() -> StatmentNode* {
+        if (peek().value == "call_t") {
+            consume();
+            expect("(");
+            auto dest = consume().value;
+            expect(")");
+            expect(";");
+            auto call_t = new CallSafeAsm();
+            call_t->dest = dest;
+            return call_t;
+        }
+
+        return nullptr;
+    };
     auto parseExternalTypedef = [&]() -> int {
         if (peek().value == "extern") {
             consume();
@@ -311,6 +334,9 @@ BodyCode parseCode(const std::string& code) {
     parseStatement = [&]() -> StatmentNode* {
         auto stmt = parseJmp();
         if (stmt) return stmt;
+
+        stmt = parseCall();
+        if (stmt) return stmt;
         
         stmt = parseVarInitDecl();
         if (stmt) return stmt;
@@ -326,6 +352,25 @@ BodyCode parseCode(const std::string& code) {
 
         auto stmt2 = parseExternalTypedef();
         if (stmt2 == 1) return nullptr;
+
+        if (peek().value == "return") {
+            consume();
+            expect(";");
+            auto ret_t = new RetSafeAsm();
+            return ret_t;
+        }
+
+        if (peek().type == TOK_IDENTIFIER) {
+            auto cm = consume();
+            if (peek().type == TOK_RBRACE && peek().value == "(") {
+                consume();
+                expect(")");
+                expect(";");
+                auto call_t = new CallSafeAsm();
+                call_t->dest = cm.value;
+                return call_t;
+            }
+        }
 
         if (peek().type == TOK_EOF) return nullptr;
 
@@ -357,24 +402,29 @@ BodyCode parseCode(const std::string& code) {
 }
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << argv[0] << " <*.c>\n";
+        std::cerr << "Uso: " << argv[0] << " <archivo1.c> <archivo2.c> ...\n";
         return 1;
     }
-
-    std::string filename = argv[1];
-    std::ifstream file(filename);
-
-    if (!file) {
-        std::cerr << "!\n";
-        return 1;
-    }
-
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-
-    std::string code = buffer.str();
 
     std::map<std::string, VariablesSize> vars;
-    BodyCode program = parseCode(code);
-    std::cout << generateCode(program,vars) << std::endl;
+
+    for (int i = 1; i < argc; ++i) {
+        std::string filename = argv[i];
+        std::ifstream file(filename);
+
+        if (!file) {
+            std::cerr << "Error: No se pudo abrir " << filename << "\n";
+            continue;
+        }
+
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        std::string code = buffer.str();
+
+        BodyCode program = parseCode(code);
+        
+        std::cout << generateCode(program, vars) << std::endl;
+    }
+    
+    return 0;
 }
