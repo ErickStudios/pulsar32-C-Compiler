@@ -1,0 +1,1 @@
+.\build\p32cc.exe tb1/main.c tb1/x.c > tb1/a.s

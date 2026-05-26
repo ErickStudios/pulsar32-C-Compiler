@@ -9,6 +9,10 @@ struct Lex {
     VariablesSize size;
     std::string initializeWith;
 };
+struct Felix {
+    std::map<std::string, VariablesSize>    variables;
+    std::vector<StructCode*>                structs;
+};
 void displayy(BodyCode& program) {
     for (auto stmt : program.body) {
         if (auto var = dynamic_cast<VarDecl*>(stmt)) {
@@ -40,9 +44,12 @@ std::string parseToSize(VariablesSize size) {
 }
 std::string generateCode(
     BodyCode& program,
-    std::map<std::string, VariablesSize>& variables
+    Felix& fel,
+    int tabs
 ) {
     std::string out;
+    std::map<std::string, VariablesSize>& variables = fel.variables;
+    std::string indent = std::string(tabs * 2, ' ');
 
     for (auto stmt : program.body) {
 
@@ -52,6 +59,26 @@ std::string generateCode(
 
             out += var->name + ": ";
             out += "Assume-" + parseToSize(var->size) + " 0\n";
+        }
+
+        else if (auto structa = dynamic_cast<StructCode*>(stmt)) {
+            fel.structs.push_back(structa);
+        }
+
+        else if (auto vactar = dynamic_cast<VectorInstanciated*>(stmt)) {
+            out += vactar->name + ": ";
+
+            out += "Assume-" + parseToSize(vactar->elementsSize) + " ";
+
+            for (size_t idx = 0; idx < vactar->vinit.size(); ++idx) {
+                out += std::to_string(vactar->vinit[idx]);
+                
+                if (idx + 1 < vactar->vinit.size()) {
+                    out += ",";
+                }
+            }
+
+            out += "\n";
         }
 
         else if (auto vari = dynamic_cast<VarDeclWithInit*>(stmt)) {
@@ -67,7 +94,7 @@ std::string generateCode(
             out += fn->nam + ":\n";
 
             if (fn->code) {
-                out += generateCode(*fn->code, variables);
+                out += generateCode(*fn->code, fel, tabs + 1);
             }
 
         }
@@ -76,12 +103,12 @@ std::string generateCode(
 
             VariablesSize size = variables[asg->name];
 
-            out += "Lea-Dword " + asg->name + "\n";
+            out += indent + "Lea-Dword " + asg->name + "\n";
 
-            out += "Out-" +
+            out += indent + "Out-" +
                    parseToSize(size) +
                    " " +
-                   std::to_string(asg->value) +
+                   asg->value +
                    "\n";
         }
 
@@ -91,13 +118,13 @@ std::string generateCode(
 
             std::string opName;
 
-            out += "Lea-Dword " + bin->right + "\n";
-            out += "Mov-" + parseToSize(size) + "\n";
-            out += "Push-" + parseToSize(size) +  " Out\n";
+            out += indent + "Lea-Dword " + bin->right + "\n";
+            out += indent + "Mov-" + parseToSize(size) + "\n";
+            out += indent + "Push-" + parseToSize(size) +  " Out\n";
 
-            out += "Lea-Dword " + bin->left + "\n";
-            out += "Mov-" + parseToSize(size) + "\n";
-            out += "Push-" + parseToSize(size) + " Out\n";
+            out += indent + "Lea-Dword " + bin->left + "\n";
+            out += indent + "Mov-" + parseToSize(size) + "\n";
+            out += indent + "Push-" + parseToSize(size) + " Out\n";
 
             if (bin->op == "+") opName = "Add";
             else if (bin->op == "-") opName = "Sub";
@@ -107,39 +134,47 @@ std::string generateCode(
             else if (bin->op == "|") opName = "Or";
             else if (bin->op == "^") opName = "Xor";
 
-            out += opName +
+            out += indent + opName +
                 "-" +
                 parseToSize(size) +
                 "-Sp-Sp\n";
 
-            out += "Lea-Dword " + bin->dest + "\n";
+            out += indent + "Lea-Dword " + bin->dest + "\n";
 
-            out += "Out-" +
+            out += indent + "Out-" +
                 parseToSize(size) +
                 " Out\n";
         }
     
         else if (auto jmp_t = dynamic_cast<JmpSafeAsm*>(stmt)) {
 
-            out += "Jmp-Dword-Clasic " + jmp_t->dest + "\n";
+            out += indent + "Jmp-Dword-Clasic " + jmp_t->dest + "\n";
 
         }
 
         else if (auto call_t = dynamic_cast<CallSafeAsm*>(stmt)) {
 
-            out += "Jmp-Dword-Call " + call_t->dest + "\n";
+            out += indent + "Jmp-Dword-Call " + call_t->dest + "\n";
 
         }
 
         else if (auto ret_t = dynamic_cast<RetSafeAsm*>(stmt)) {
-            out += "Jmp-Dword-Clasic Sp\n";
+            out += indent + "Jmp-Dword-Clasic Sp\n";
         }
     }
 
     return out;
 }
+std::string generateCode(
+    BodyCode& program,
+    Felix& fel
+)
+{
+    return generateCode(program, fel, 0);
+}
 BodyCode parseCode(const std::string& code) {
     std::map<std::string, Lex> types;
+    std::function<StatmentNode*()> parseStatement;
 
     auto tokens = tokenize(code);
     int i = 0;
@@ -157,7 +192,21 @@ BodyCode parseCode(const std::string& code) {
         }
         return consume();
     };
-    std::function<StatmentNode*()> parseStatement;
+    auto getVectorialInitDot = [&]() -> std::vector<int> {
+        std::vector<int> vinit;
+        if (peek().type == TOK_STRING) {
+            std::string literal = consume().value; 
+            
+            for (char c : literal) {
+                vinit.push_back(static_cast<int>(c));
+            }
+        }
+        else if (peek().type == TOK_NUMBER) {
+            vinit.push_back(std::stoi(consume().value));
+        }
+
+        return vinit;
+    };
     auto parseType = [&]() -> VariablesSize {
         if (peek().type == TOK_IDENTIFIER && peek().value == "char") {
             consume();
@@ -171,8 +220,43 @@ BodyCode parseCode(const std::string& code) {
             consume();
             return VariablesSize::Int;
         }
+        if (peek().type == TOK_IDENTIFIER && peek().value == "ptr_t") {
+            consume();
+            return VariablesSize::Int;
+        }
 
         return VariablesSize::Misingno;
+    };
+    auto parseVectorInitializer = [&]() -> StatmentNode* {
+        if (peek().value == "vector_t") {
+            consume();
+            expect("(");
+            auto ty = parseType();
+            if (ty == VariablesSize::Misingno) return nullptr;
+            expect(")");
+            auto name = consume().value;
+            auto vector_ta = new VectorInstanciated();
+            vector_ta->name = name;
+            expect("(");
+            while (peek().value != ")") {
+                auto mm = getVectorialInitDot();
+                vector_ta->vinit.insert(vector_ta->vinit.end(), mm.begin(), mm.end());
+                if (peek().value == ",") {
+                    consume();
+                    continue;
+                } 
+                else if (peek().value == ")") break;
+                consume();
+            }
+
+            expect(")");
+
+            expect(";");
+
+            return vector_ta;
+        }
+
+        return nullptr;
     };
     auto parseAssignment = [&]() -> StatmentNode* {
         if (peek().type == TOK_IDENTIFIER) {
@@ -181,17 +265,15 @@ BodyCode parseCode(const std::string& code) {
             if (peek().value == "=") {
                 consume();
 
-                if (peek().type == TOK_NUMBER) {
-                    int value = std::stoi(consume().value);
+                auto value = consume().value;
 
-                    expect(";");
+                expect(";");
 
-                    auto assign = new Assignment();
-                    assign->name = name;
-                    assign->value = value;
+                auto assign = new Assignment();
+                assign->name = name;
+                assign->value = value;
 
-                    return assign;
-                }
+                return assign;
             }
 
             i--;
@@ -311,6 +393,35 @@ BodyCode parseCode(const std::string& code) {
 
         return nullptr;
     };
+    auto parseStruct = [&]() -> StatmentNode* { 
+        if (peek().value == "struct") {
+            consume();
+            auto name = consume().value;
+            expect("{");
+            auto strct = new StructCode();
+            strct->name = name;
+            while (true) {
+                if (peek().value == "}") {
+                    consume();
+                    expect(";");
+                    break;
+                }
+
+                auto type = parseType();
+
+                if (type == VariablesSize::Misingno) return nullptr;
+
+                auto name2 = expect(peek().value).value;
+                expect(";");
+                auto nm = new StructField();
+                nm->name = name2;
+                nm->size = type;
+                strct->body.push_back(nm);
+            }
+            return strct;
+        }
+        return nullptr;
+    };
     auto parseExternalTypedef = [&]() -> int {
         if (peek().value == "extern") {
             consume();
@@ -339,6 +450,12 @@ BodyCode parseCode(const std::string& code) {
         if (stmt) return stmt;
         
         stmt = parseVarInitDecl();
+        if (stmt) return stmt;
+
+        stmt = parseVectorInitializer();
+        if (stmt) return stmt;
+
+        stmt = parseStruct();
         if (stmt) return stmt;
 
         stmt = parseVarDecl();
@@ -406,10 +523,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::map<std::string, VariablesSize> vars;
+    Felix env;
+    std::string hdr = "; used files: ";
+
+    std::string cdm = "";
 
     for (int i = 1; i < argc; ++i) {
         std::string filename = argv[i];
+        hdr += filename + " ";
         std::ifstream file(filename);
 
         if (!file) {
@@ -423,8 +544,10 @@ int main(int argc, char* argv[]) {
 
         BodyCode program = parseCode(code);
         
-        std::cout << generateCode(program, vars) << std::endl;
+        cdm += generateCode(program, env) + "\n";
     }
+
+    std::cout << (hdr + "\n" + cdm) << std::endl;
     
     return 0;
 }

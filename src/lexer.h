@@ -6,6 +6,7 @@ enum TokenType {
     TOK_IDENTIFIER,
     TOK_NUMBER,
     TOK_RBRACE,
+    TOK_STRING,
     TOK_EOF
 };
 

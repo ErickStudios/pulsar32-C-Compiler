@@ -43,7 +43,7 @@ struct VarDeclWithInit : StatmentNode {
 
 struct Assignment : StatmentNode {
     std::string name;
-    int value;
+    std::string value;
 
     std::string getType() const override {
         return "Assignment";
@@ -70,7 +70,6 @@ struct RetSafeAsm : StatmentNode {
     }
 };
 
-
 struct BinaryOperation : StatmentNode  {
     std::string dest;
     std::string left;
@@ -87,6 +86,31 @@ struct FunctionDecl : StatmentNode {
     VariablesSize size;
     std::string getType() const override {
         return "FunctionDecl";
+    }
+};
+
+struct StructField : StatmentNode {
+    std::string name;
+    VariablesSize size;
+    std::string getType() const override {
+        return "StructField";
+    }
+};
+
+struct StructCode : StatmentNode {
+    std::string name;
+    std::vector<StructField*> body;
+    std::string getType() const override {
+        return "StructCode";
+    }
+};
+
+struct VectorInstanciated : StatmentNode {
+    std::string name;
+    VariablesSize elementsSize;
+    std::vector<int> vinit;
+    std::string getType() const override {
+        return "VectorInstanciated";
     }
 };
 
